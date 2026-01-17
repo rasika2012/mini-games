@@ -55,6 +55,65 @@
             font-size: 16px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
         }
+        
+        /* Mobile Controls */
+        .mobile-controls {
+            position: absolute;
+            bottom: 30px;
+            display: flex;
+            gap: 20px;
+            z-index: 200;
+        }
+        
+        .control-left {
+            left: 30px;
+            flex-direction: column;
+        }
+        
+        .control-right {
+            right: 30px;
+        }
+        
+        .control-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            touch-action: none;
+            backdrop-filter: blur(10px);
+            transition: all 0.1s;
+        }
+        
+        .control-btn:active {
+            background: rgba(255, 255, 255, 0.5);
+            transform: scale(0.95);
+        }
+        
+        .control-btn.shoot {
+            background: rgba(255, 100, 100, 0.4);
+            border-color: rgba(255, 100, 100, 0.9);
+            width: 80px;
+            height: 80px;
+        }
+        
+        .control-btn.shoot:active {
+            background: rgba(255, 100, 100, 0.6);
+        }
+        
+        @media (min-width: 768px) {
+            .mobile-controls {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -63,6 +122,15 @@
     </div>
     <canvas id="gameCanvas"></canvas>
     <div id="instructions">Use ↑ UP and ↓ DOWN arrow keys to fly. Go through the CENTER of rings!</div>
+    
+    <!-- Mobile Controls -->
+    <div class="mobile-controls control-left">
+        <div class="control-btn" id="btnUp">↑</div>
+        <div class="control-btn" id="btnDown">↓</div>
+    </div>
+    <div class="mobile-controls control-right">
+        <div class="control-btn shoot" id="btnShoot">🔫</div>
+    </div>
     
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -275,6 +343,48 @@
             resizeCanvas();
             updateGameSpeeds();
         });
+        
+        // Mobile control buttons
+        const btnUp = document.getElementById('btnUp');
+        const btnDown = document.getElementById('btnDown');
+        const btnShoot = document.getElementById('btnShoot');
+        
+        // Touch controls for up button
+        btnUp.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            keys['ArrowUp'] = true;
+            if (!gameStarted) gameStarted = true;
+        });
+        btnUp.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            keys['ArrowUp'] = false;
+        });
+        
+        // Touch controls for down button
+        btnDown.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            keys['ArrowDown'] = true;
+            if (!gameStarted) gameStarted = true;
+        });
+        btnDown.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            keys['ArrowDown'] = false;
+        });
+        
+        // Touch controls for shoot button
+        btnShoot.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!gameOver && !isShooting) {
+                shoot();
+            }
+        });
+        
+        // Mouse support for desktop testing
+        btnUp.addEventListener('mousedown', () => { keys['ArrowUp'] = true; if (!gameStarted) gameStarted = true; });
+        btnUp.addEventListener('mouseup', () => { keys['ArrowUp'] = false; });
+        btnDown.addEventListener('mousedown', () => { keys['ArrowDown'] = true; if (!gameStarted) gameStarted = true; });
+        btnDown.addEventListener('mouseup', () => { keys['ArrowDown'] = false; });
+        btnShoot.addEventListener('mousedown', () => { if (!gameOver && !isShooting) shoot(); });
         
         // Draw airplane
         function drawAirplane() {
