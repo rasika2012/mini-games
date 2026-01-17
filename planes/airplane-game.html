@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airplane Ring Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #87CEEB 0%, #DEB887 80%, #8B7355 100%);
+        }
+        
+        #gameInfo {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        
+        #score {
+            font-size: 32px;
+            color: #FFD700;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 16px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameInfo">
+        <div>Score: <span id="score">0</span></div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="instructions">Use ↑ UP and ↓ DOWN arrow keys to fly. Go through the CENTER of rings!</div>
+    
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        
+        // Load assets
+        const bgImage = new Image();
+        bgImage.src = 'Assets/BG.png';
+        
+        const planeImages = {
+            fly1: new Image(),
+            fly2: new Image(),
+            dead: new Image(),
+            shoot: new Image()
+        };
+        planeImages.fly1.src = 'Assets/Plane2/Fly-1.png';
+        planeImages.fly2.src = 'Assets/Plane2/Fly-2.png';
+        planeImages.dead.src = 'Assets/Plane2/Colide.png';
+        planeImages.shoot.src = 'Assets/Plane2/Shoot1.png';
+        
+        const ringImages = {
+            ring1: new Image(),
+            ring2: new Image()
+        };
+        ringImages.ring1.src = 'Assets/Plane2/Ring1.png';
+        ringImages.ring2.src = 'Assets/Plane2/Ring2.png';
+        
+        const bulletImages = [];
+        for (let i = 1; i <= 5; i++) {
+            const img = new Image();
+            img.src = `Assets/Bullet/Bullet (${i}).png`;
+            bulletImages.push(img);
+        }
+        
+        let assetsLoaded = 0;
+        const totalAssets = 12; // bg + 4 plane images + 5 bullets + 2 rings
+        let allAssetsLoaded = false;
+        
+        function onAssetLoad() {
+            assetsLoaded++;
+            if (assetsLoaded === totalAssets) {
+                allAssetsLoaded = true;
+            }
+        }
+        
+        bgImage.onload = onAssetLoad;
+        planeImages.fly1.onload = onAssetLoad;
+        planeImages.fly2.onload = onAssetLoad;
+        planeImages.dead.onload = onAssetLoad;
+        planeImages.shoot.onload = onAssetLoad;
+        ringImages.ring1.onload = onAssetLoad;
+        ringImages.ring2.onload = onAssetLoad;
+        bulletImages.forEach(img => img.onload = onAssetLoad);
+        
+        let planeAnimationFrame = 0;
+        let isShooting = false;
+        let shootingFrame = 0;
+        let shootingTimer = 0;
+        const shootingDuration = 15; // frames
+        
+        // Clouds for parallax effect
+        let clouds = [];
+        
+        function createCloud(randomX = true) {
+            return {
+                x: randomX ? Math.random() * canvas.width * 1.5 : canvas.width + Math.random() * 200,
+                y: Math.random() * canvas.height * 0.7,
+                width: Math.random() * 100 + 80,
+                height: Math.random() * 40 + 50,
+                speed: Math.random() * 0.5 + 0.3,
+                opacity: Math.random() * 0.5 + 0.5
+            };
+        }
+        
+        function initializeClouds() {
+            clouds = [];
+            for (let i = 0; i < 15; i++) {
+                clouds.push(createCloud(true));
+            }
+        }
+        
+        function drawCloud(cloud) {
+            ctx.save();
+            ctx.globalAlpha = cloud.opacity;
+            ctx.fillStyle = '#fff';
+            
+            // Draw cloud using circles
+            ctx.beginPath();
+            ctx.arc(cloud.x, cloud.y, cloud.height * 0.6, 0, Math.PI * 2);
+            ctx.arc(cloud.x + cloud.width * 0.3, cloud.y, cloud.height * 0.8, 0, Math.PI * 2);
+            ctx.arc(cloud.x + cloud.width * 0.6, cloud.y, cloud.height * 0.65, 0, Math.PI * 2);
+            ctx.arc(cloud.x + cloud.width * 0.9, cloud.y, cloud.height * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.restore();
+        }
+        
+        function updateClouds() {
+            clouds.forEach(cloud => {
+                cloud.x -= cloud.speed;
+                
+                // Wrap around when cloud goes off screen
+                if (cloud.x + cloud.width < 0) {
+                    cloud.x = canvas.width + cloud.width;
+                    cloud.y = Math.random() * canvas.height * 0.7;
+                    cloud.width = Math.random() * 100 + 80;
+                    cloud.height = Math.random() * 40 + 30;
+                    cloud.speed = Math.random() * 0.5 + 0.3;
+                    cloud.opacity = Math.random() * 0.6 + 0.5;
+                }
+            });
+        }
+        
+        // Game state
+        let gameOver = false;
+        let score = 0;
+        let baseGameSpeed = 2;
+        let gameSpeed = 2;
+        let speedModifier = 1;
+        let isFalling = false;
+        let gameStarted = false;
+        let groundHeight = 100;
+        
+        // Airplane
+        const airplane = {
+            x: 150,
+            y: 300,
+            width: 60,
+            height: 30,
+            velocity: 0,
+            moveSpeed: 4,
+            fallSpeed: 0,
+            fallAcceleration: 0.5,
+            rotation: 0,
+            targetRotation: 0
+        };
+        
+        // Set canvas to fullscreen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            // Update game elements based on new size
+            groundHeight = canvas.height * 0.15;
+            
+            // Reposition airplane
+            airplane.x = canvas.width * 0.2;
+            if (!gameStarted && !gameOver) {
+                airplane.y = canvas.height / 2;
+            }
+        }
+        
+        // Initialize canvas size
+        resizeCanvas();
+        
+        // Initialize clouds after canvas is sized
+        initializeClouds();
+        
+        // Update speeds based on canvas size
+        function updateGameSpeeds() {
+            const baseSpeed = canvas.height / 150;
+            airplane.moveSpeed = baseSpeed;
+            airplane.fallAcceleration = baseSpeed * 0.125;
+            baseGameSpeed = canvas.width / 300; // Slower base speed
+            gameSpeed = baseGameSpeed;
+        }
+        
+        updateGameSpeeds();
+        
+        // Controls
+        const keys = {};
+        
+        // Rings
+        let rings = [];
+        let ringSpawnTimer = 0;
+        let ringSpawnInterval = 150;
+        
+        // Bullets
+        let bullets = [];
+        
+        // Explosions
+        let explosions = [];
+        
+        // Balloons (bombs)
+        let balloons = [];
+        let balloonSpawnTimer = 0;
+        let balloonSpawnInterval = 200;
+        
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (gameOver && e.key === ' ') {
+                resetGame();
+            }
+            if (!gameStarted && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                gameStarted = true;
+            }
+            if (!gameOver && e.key === ' ' && !isShooting) {
+                shoot();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            updateGameSpeeds();
+        });
+        
+        // Draw airplane
+        function drawAirplane() {
+            if (!allAssetsLoaded) return;
+            
+            ctx.save();
+            ctx.translate(airplane.x, airplane.y);
+            
+            // Rotate if falling
+            if (isFalling) {
+                ctx.rotate(Math.min(airplane.fallSpeed * 0.1, Math.PI / 2));
+            } else {
+                // Smooth rotation based on movement
+                airplane.rotation += (airplane.targetRotation - airplane.rotation) * 0.2;
+                ctx.rotate(airplane.rotation);
+            }
+            
+            // Choose plane image based on state
+            let planeImg;
+            if (isFalling || gameOver) {
+                planeImg = planeImages.dead;
+            } else if (isShooting) {
+                // Show shooting sprite
+                planeImg = planeImages.shoot;
+                shootingTimer++;
+                if (shootingTimer >= shootingDuration) {
+                    isShooting = false;
+                    shootingTimer = 0;
+                    shootingFrame = 0;
+                }
+                shootingFrame++;
+            } else {
+                // Animate between fly frames
+                planeImg = (Math.floor(Date.now() / 100) % 2 === 0) ? planeImages.fly1 : planeImages.fly2;
+            }
+            
+            // Draw the plane sprite - adjust size dynamically based on actual image
+            let planeWidth = 100;
+            let planeHeight = 100;
+            
+            // Scale based on image dimensions if loaded
+            if (planeImg && planeImg.complete && planeImg.naturalWidth > 0) {
+                const aspectRatio = planeImg.naturalWidth / planeImg.naturalHeight;
+                planeHeight = 80;
+                planeWidth = planeHeight * aspectRatio;
+            }
+            
+            ctx.drawImage(planeImg, -planeWidth / 2, -planeHeight / 2, planeWidth, planeHeight);
+            
+            ctx.restore();
+        }
+        
+        // Create ring
+        function createRing() {
+            const ringWidth = Math.min(canvas.width, canvas.height) * 0.08;
+            const ringHeight = ringWidth * 4; // 50:200 aspect ratio (height is 4x width)
+            const minY = ringHeight / 2 + 20;
+            const maxY = canvas.height - groundHeight - ringHeight / 2 - 20;
+            const centerY = Math.random() * (maxY - minY) + minY;
+            
+            rings.push({
+                x: canvas.width + 50,
+                centerY: centerY,
+                width: ringWidth,
+                height: ringHeight,
+                passed: false,
+                scored: false,
+                type: Math.random() > 0.5 ? 'ring1' : 'ring2'
+            });
+        }
+        
+        // Draw ring left half (behind plane)
+        function drawRingLeftHalf(ring) {
+            if (!allAssetsLoaded) return;
+            
+            // Choose ring image
+            const ringImg = ring.type === 'ring1' ? ringImages.ring1 : ringImages.ring2;
+            
+            if (ringImg && ringImg.complete) {
+                ctx.save();
+                // Clip to show only left half
+                ctx.beginPath();
+                ctx.rect(0, 0, ring.x, canvas.height);
+                ctx.clip();
+                
+                ctx.drawImage(ringImg, 
+                    ring.x - ring.width / 2, 
+                    ring.centerY - ring.height / 2, 
+                    ring.width, 
+                    ring.height
+                );
+                ctx.restore();
+            }
+        }
+        
+        // Draw ring right half (in front of plane)
+        function drawRingRightHalf(ring) {
+            if (!allAssetsLoaded) return;
+            
+            // Choose ring image
+            const ringImg = ring.type === 'ring1' ? ringImages.ring1 : ringImages.ring2;
+            
+            if (ringImg && ringImg.complete) {
+                ctx.save();
+                // Clip to show only right half
+                ctx.beginPath();
+                ctx.rect(ring.x, 0, canvas.width - ring.x, canvas.height);
+                ctx.clip();
+                
+                ctx.drawImage(ringImg, 
+                    ring.x - ring.width / 2, 
+                    ring.centerY - ring.height / 2, 
+                    ring.width, 
+                    ring.height
+                );
+                ctx.restore();
+            }
+        }
+        
+        // Create balloon
+        function createBalloon() {
+            const balloonSize = Math.min(canvas.width, canvas.height) * 0.04;
+            const minY = balloonSize * 2;
+            const maxY = canvas.height - groundHeight - balloonSize * 2;
+            const centerY = Math.random() * (maxY - minY) + minY;
+            
+            balloons.push({
+                x: canvas.width + 50,
+                y: centerY,
+                radius: balloonSize,
+                passed: false
+            });
+        }
+        
+        // Draw balloon
+        function drawBalloon(balloon) {
+            // Draw red balloon
+            ctx.beginPath();
+            ctx.arc(balloon.x, balloon.y, balloon.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF0000';
+            ctx.fill();
+            ctx.strokeStyle = '#8B0000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Highlight
+            ctx.beginPath();
+            ctx.arc(balloon.x - balloon.radius * 0.3, balloon.y - balloon.radius * 0.3, balloon.radius * 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.fill();
+            
+            // String
+            ctx.beginPath();
+            ctx.moveTo(balloon.x, balloon.y + balloon.radius);
+            ctx.lineTo(balloon.x, balloon.y + balloon.radius * 2);
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        
+        // Shoot bullet
+        function shoot() {
+            isShooting = true;
+            shootingTimer = 0;
+            shootingFrame = 0;
+            
+            bullets.push({
+                x: airplane.x + 30,
+                y: airplane.y,
+                vx: Math.cos(airplane.rotation) * 18,
+                vy: Math.sin(airplane.rotation) * 18,
+                rotation: airplane.rotation,
+                animFrame: 0
+            });
+        }
+        
+        // Draw bullet
+        function drawBullet(bullet) {
+            if (bulletImages.length > 0) {
+                const bulletImg = bulletImages[Math.floor(bullet.animFrame / 2) % bulletImages.length];
+                ctx.save();
+                ctx.translate(bullet.x, bullet.y);
+                ctx.rotate(bullet.rotation);
+                ctx.drawImage(bulletImg, -10, -10, 20, 20);
+                ctx.restore();
+                bullet.animFrame++;
+            }
+        }
+        
+        // Create explosion
+        function createExplosion(x, y) {
+            explosions.push({
+                x: x,
+                y: y,
+                size: 10,
+                maxSize: 60,
+                growSpeed: 3,
+                alpha: 1,
+                fadeSpeed: 0.05,
+                animFrame: 0
+            });
+        }
+        
+        // Draw explosion
+        function drawExplosion(explosion) {
+            if (bulletImages.length > 0) {
+                ctx.save();
+                ctx.globalAlpha = explosion.alpha;
+                
+                // Draw multiple bullet images in a circle pattern for fire effect
+                const numParticles = 8;
+                for (let i = 0; i < numParticles; i++) {
+                    const angle = (i / numParticles) * Math.PI * 2;
+                    const offset = explosion.size * 0.3;
+                    const x = explosion.x + Math.cos(angle) * offset;
+                    const y = explosion.y + Math.sin(angle) * offset;
+                    
+                    const bulletImg = bulletImages[Math.floor((explosion.animFrame + i) / 2) % bulletImages.length];
+                    ctx.translate(x, y);
+                    ctx.rotate(angle);
+                    ctx.drawImage(bulletImg, -explosion.size / 2, -explosion.size / 2, explosion.size, explosion.size);
+                    ctx.rotate(-angle);
+                    ctx.translate(-x, -y);
+                }
+                
+                // Central larger explosion
+                const centerImg = bulletImages[Math.floor(explosion.animFrame / 2) % bulletImages.length];
+                ctx.drawImage(centerImg, explosion.x - explosion.size, explosion.y - explosion.size, explosion.size * 2, explosion.size * 2);
+                
+                ctx.restore();
+            }
+        }
+        
+        // Update explosions
+        function updateExplosions() {
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                explosions[i].size += explosions[i].growSpeed;
+                explosions[i].alpha -= explosions[i].fadeSpeed;
+                explosions[i].animFrame++;
+                
+                // Remove faded explosions
+                if (explosions[i].alpha <= 0 || explosions[i].size >= explosions[i].maxSize) {
+                    explosions.splice(i, 1);
+                }
+            }
+        }
+        
+        // Update bullets
+        function updateBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].x += bullets[i].vx;
+                bullets[i].y += bullets[i].vy;
+                
+                // Remove off-screen bullets
+                if (bullets[i].x > canvas.width + 50 || bullets[i].x < -50 || 
+                    bullets[i].y > canvas.height + 50 || bullets[i].y < -50) {
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+        
+        // Update balloons
+        function updateBalloons() {
+            balloonSpawnTimer++;
+            
+            if (balloonSpawnTimer > balloonSpawnInterval) {
+                createBalloon();
+                balloonSpawnTimer = 0;
+            }
+            
+            for (let i = balloons.length - 1; i >= 0; i--) {
+                balloons[i].x -= baseGameSpeed * speedModifier;
+                
+                // Check collision with bullets
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const dx = bullets[j].x - balloons[i].x;
+                    const dy = bullets[j].y - balloons[i].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < balloons[i].radius) {
+                        // Hit! Remove both and create explosion
+                        createExplosion(balloons[i].x, balloons[i].y);
+                        balloons.splice(i, 1);
+                        bullets.splice(j, 1);
+                        score += 2; // Bonus points for shooting balloons
+                        scoreElement.textContent = score;
+                        break;
+                    }
+                }
+                
+                // Check if balloon hit plane
+                if (balloons[i]) {
+                    const dx = airplane.x - balloons[i].x;
+                    const dy = airplane.y - balloons[i].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < balloons[i].radius + 30) {
+                        // Hit by balloon! Create explosion
+                        createExplosion(balloons[i].x, balloons[i].y);
+                        balloons.splice(i, 1);
+                        if (!isFalling) {
+                            isFalling = true;
+                            airplane.fallSpeed = 0;
+                        }
+                        continue;
+                    }
+                }
+                
+                // Remove off-screen balloons
+                if (balloons[i] && balloons[i].x < -100) {
+                    balloons.splice(i, 1);
+                }
+            }
+        }
+        
+        // Draw ground
+        function drawGround() {
+            // White background
+            ctx.fillStyle = '#aaa';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // Draw clouds
+        function drawClouds() {
+            // Skip clouds since we're using background image
+            // The background image already has the sky/clouds
+        }
+        
+        // Update airplane
+        function updateAirplane() {
+            if (isFalling) {
+                // Plane is falling after hitting a ring
+                airplane.fallSpeed += airplane.fallAcceleration;
+                airplane.y += airplane.fallSpeed;
+                speedModifier = 1;
+                
+                // Check if hit ground
+                if (airplane.y > canvas.height - groundHeight - 20) {
+                    gameOver = true;
+                }
+            } else {
+                // Normal flight - no gravity, only controlled movement
+                if (keys['ArrowUp']) {
+                    airplane.y -= airplane.moveSpeed;
+                    airplane.targetRotation = -0.4; // Tilt up
+                    speedModifier = 0.85; // Slow down rings when going up
+                } else if (keys['ArrowDown']) {
+                    airplane.y += airplane.moveSpeed;
+                    airplane.targetRotation = 0.4; // Tilt down
+                    speedModifier = 1.15; // Speed up rings when going down
+                } else {
+                    airplane.targetRotation = 0; // Level flight
+                    speedModifier = 1; // Normal speed
+                }
+                
+                // Keep within bounds (but don't crash)
+                const minBound = canvas.height * 0.05;
+                const maxBound = canvas.height - groundHeight - canvas.height * 0.05;
+                if (airplane.y < minBound) {
+                    airplane.y = minBound;
+                }
+                if (airplane.y > maxBound) {
+                    airplane.y = maxBound;
+                }
+            }
+        }
+        
+        // Update rings
+        function updateRings() {
+            ringSpawnTimer++;
+            
+            if (ringSpawnTimer > ringSpawnInterval) {
+                createRing();
+                ringSpawnTimer = 0;
+            }
+            
+            for (let i = rings.length - 1; i >= 0; i--) {
+                rings[i].x -= baseGameSpeed * speedModifier;
+                
+                // Check collision
+                if (!rings[i].passed && rings[i].x < airplane.x + 10) {
+                    rings[i].passed = true;
+                    
+                    // Check if airplane is in the ring vertically
+                    const topEdge = rings[i].centerY - rings[i].height / 2;
+                    const bottomEdge = rings[i].centerY + rings[i].height / 2;
+                    const collisionThreshold = rings[i].height * 0.20; // 20% of ring height (10% each side)
+                    
+                    const topDangerZone = topEdge + collisionThreshold;
+                    const bottomDangerZone = bottomEdge - collisionThreshold;
+                    
+                    // Check if plane is inside the ring vertically
+                    const insideRing = airplane.y >= topEdge && airplane.y <= bottomEdge;
+                    
+                    if (insideRing) {
+                        // Plane is inside the ring bounds
+                        if (airplane.y >= topDangerZone && airplane.y <= bottomDangerZone) {
+                            // In safe center zone (middle 60%)
+                            if (!rings[i].scored) {
+                                score++;
+                                scoreElement.textContent = score;
+                                rings[i].scored = true;
+                                
+                                // Increase difficulty
+                                if (score % 5 === 0 && baseGameSpeed < canvas.width / 150) {
+                                    baseGameSpeed += baseGameSpeed * 0.15;
+                                }
+                            }
+                        } else {
+                            // Hit the danger zones (top or bottom 20%)
+                            if (!isFalling) {
+                                isFalling = true;
+                                airplane.fallSpeed = 0;
+                            }
+                        }
+                    }
+                    // If completely outside ring (above or below), that's okay - just missed
+                }
+                
+                // Remove off-screen rings
+                if (rings[i].x < -100) {
+                    rings.splice(i, 1);
+                }
+            }
+        }
+        
+        // Draw game over
+        function drawGameOver() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#FF0000';
+            ctx.font = 'bold 60px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('CRASH!', canvas.width / 2, canvas.height / 2 - 50);
+            
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 30px Arial';
+            ctx.fillText('Final Score: ' + score, canvas.width / 2, canvas.height / 2 + 10);
+            
+            ctx.font = '20px Arial';
+            ctx.fillText('Press SPACE to restart', canvas.width / 2, canvas.height / 2 + 60);
+        }
+        
+        // Reset game
+        function resetGame() {
+            gameOver = false;
+            isFalling = false;
+            gameStarted = false;
+            score = 0;
+            scoreElement.textContent = score;
+            airplane.x = canvas.width * 0.2;
+            airplane.y = canvas.height / 2;
+            airplane.fallSpeed = 0;
+            airplane.rotation = 0;
+            airplane.targetRotation = 0;
+            rings = [];
+            ringSpawnTimer = 0;
+            bullets = [];
+            explosions = [];
+            balloons = [];
+            balloonSpawnTimer = 0;
+            isShooting = false;
+            shootingTimer = 0;
+            shootingFrame = 0;
+            updateGameSpeeds();
+        }
+        
+        // Game loop
+        function gameLoop() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background (includes ground now)
+            drawGround();
+            
+            // Update and draw clouds (behind everything)
+            updateClouds();
+            clouds.forEach(cloud => drawCloud(cloud));
+            
+            if (!gameOver) {
+                updateAirplane();
+                updateRings();
+                updateBalloons();
+                updateBullets();
+                updateExplosions();
+            }
+            
+            // Draw left halves of rings (behind plane)
+            rings.forEach(ring => drawRingLeftHalf(ring));
+            
+            // Draw balloons
+            balloons.forEach(balloon => drawBalloon(balloon));
+            
+            // Draw explosions
+            explosions.forEach(explosion => drawExplosion(explosion));
+            
+            // Draw bullets
+            bullets.forEach(bullet => drawBullet(bullet));
+            
+            // Draw airplane
+            drawAirplane();
+            
+            // Draw right halves of rings (in front of plane)
+            rings.forEach(ring => drawRingRightHalf(ring));
+            
+            // Draw game over screen
+            if (gameOver) {
+                drawGameOver();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start game
+        gameLoop();
+    </script>
+</body>
+</html>
